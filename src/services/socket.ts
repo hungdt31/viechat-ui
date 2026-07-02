@@ -17,7 +17,7 @@ class SocketService {
 
     try {
       this.socket = io(SOCKET_URL, {
-        auth: { token },
+        query: { token },
         transports: ['websocket'],
         reconnectionAttempts: 5,
         timeout: 10000,

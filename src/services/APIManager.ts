@@ -25,6 +25,41 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Helper for snake_case to camelCase mapping
+const toCamel = (str: string) => {
+  return str.replace(/([-_][a-z])/ig, ($1) => $1.toUpperCase().replace('-', '').replace('_', ''));
+};
+
+const isObject = (obj: any) => obj === Object(obj) && !Array.isArray(obj) && typeof obj !== 'function';
+
+export const keysToCamel = (obj: any): any => {
+  if (isObject(obj)) {
+    const n: Record<string, any> = {};
+    Object.keys(obj).forEach((k) => {
+      let camelKey = toCamel(k);
+      // Domain-specific aliases to match Frontend interfaces
+      if (camelKey === 'messageContent') camelKey = 'content';
+      if (camelKey === 'messageType') camelKey = 'type';
+      n[camelKey] = keysToCamel(obj[k]);
+    });
+    return n;
+  } else if (Array.isArray(obj)) {
+    return obj.map((i) => keysToCamel(i));
+  }
+  return obj;
+};
+
+// Request Interceptor: Map backend responses to camelCase
+axiosInstance.interceptors.response.use(
+  (response) => {
+    if (response.data) {
+      response.data = keysToCamel(response.data);
+    }
+    return response;
+  },
+  (error) => Promise.reject(error)
+);
+
 // Flag to force/use mock fallback
 let isMockActive = false;
 
@@ -337,10 +372,10 @@ export class APIManager {
       return { success: true, data: messages as unknown as T };
     }
     
-    // GET /users/search?keyword=...
+    // GET /users/search?keyword=... or ?q=...
     if (url.startsWith('/users/search')) {
       const searchParams = new URLSearchParams(url.split('?')[1]);
-      const keyword = (searchParams.get('keyword') || '').toLowerCase();
+      const keyword = (searchParams.get('keyword') || searchParams.get('q') || '').toLowerCase();
       const users = JSON.parse(localStorage.getItem('viechat_users') || '[]');
       const filtered = users.filter((u: IUser) => 
         u.username.toLowerCase().includes(keyword) || 

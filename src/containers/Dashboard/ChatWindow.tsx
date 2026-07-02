@@ -8,6 +8,7 @@ import {
   useTogglePinMutation,
   useDeleteMessageMutation,
 } from '../../hooks/chat/mutations';
+import { APIManager, keysToCamel } from '../../services/APIManager';
 import type { IMessage, IConversation } from '@dto';
 import { useQueryClient } from '@tanstack/react-query';
 import { QUERY_KEYS } from '../../hooks/chat/queries';
@@ -19,7 +20,7 @@ import { Button } from '../../components/ui/button';
 import { ScrollArea } from '../../components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../components/ui/dropdown-menu';
-import { Smile, Image, FileText } from 'lucide-react';
+import { Smile, Image, FileText, Heart } from 'lucide-react';
 
 interface ChatWindowProps {
   conversationId: string | null;
@@ -60,32 +61,39 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
   useEffect(() => {
     if (!conversationId) return;
 
-    const handleIncomingMessage = (newMessage: IMessage) => {
+    const handleIncomingMessage = (rawMessage: any) => {
+      const newMessage = keysToCamel(rawMessage) as IMessage;
       if (newMessage.conversationId === conversationId) {
         // Manually update the cache
         queryClient.setQueryData<IMessage[]>(QUERY_KEYS.messages(conversationId), (old = []) => {
           if (old.some((m) => m.id === newMessage.id)) return old;
           return [...old, newMessage];
         });
-        
+
         // Refresh conversations to update sidebar snippets
         queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.conversations] });
       }
     };
 
-    const handleTypingStatus = (data: { conversationId: string; username: string; typing: boolean }) => {
-      if (data.conversationId === conversationId && data.username !== user?.username) {
-        setTypingUser(data.username);
-        setIsTyping(data.typing);
-      }
+    const handleTypingStart = (userId: string) => {
+      // In a real app we'd map userId to username, but for simplicity here:
+      setIsTyping(true);
+      setTypingUser('Someone');
     };
 
-    socket.on('message:receive', handleIncomingMessage);
-    socket.on('typing:update', handleTypingStatus);
+    const handleTypingStop = (userId: string) => {
+      setIsTyping(false);
+      setTypingUser('');
+    };
+
+    socket.on('receive_message', handleIncomingMessage);
+    socket.on('user_typing', handleTypingStart);
+    socket.on('user_stop_typing', handleTypingStop);
 
     return () => {
-      socket.off('message:receive', handleIncomingMessage);
-      socket.off('typing:update', handleTypingStatus);
+      socket.off('receive_message', handleIncomingMessage);
+      socket.off('user_typing', handleTypingStart);
+      socket.off('user_stop_typing', handleTypingStop);
     };
   }, [conversationId, socket, queryClient, user?.username]);
 
@@ -93,14 +101,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputVal(e.target.value);
 
-    socket.emit('typing:start', { conversationId, username: user?.username });
+    socket.emit('typing', conversationId);
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
     typingTimeoutRef.current = setTimeout(() => {
-      socket.emit('typing:stop', { conversationId, username: user?.username });
+      socket.emit('stop_typing', conversationId);
     }, 2000);
   };
 
@@ -111,7 +119,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
     try {
       await sendMessageMutation.mutateAsync({ content: inputVal, type: 'TEXT' });
       setInputVal('');
-      socket.emit('typing:stop', { conversationId, username: user?.username });
+      socket.emit('stop_typing', conversationId);
     } catch (err) {
       console.error('Failed to send message', err);
     }
@@ -128,7 +136,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
     const mockContent = type === 'IMAGE'
       ? 'Uploaded an image: https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400'
       : 'Attachment: Project_Specification_v2.pdf (1.2 MB)';
-      
+
     try {
       await sendMessageMutation.mutateAsync({ content: mockContent, type });
     } catch (err) {
@@ -164,9 +172,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
   };
 
   // Search filter
-  const filteredMessages = messages.filter((m) => {
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const filteredMessages = safeMessages.filter((m) => {
     if (!searchInChat) return true;
     return m.content.toLowerCase().includes(searchInChat.toLowerCase());
+  });
+
+  // Sort messages chronologically (oldest first)
+  const sortedMessages = [...filteredMessages].sort((a, b) => {
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 
   if (!conversationId) {
@@ -186,21 +200,21 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
   // Get active conversation details
   const conversations = queryClient.getQueryData<IConversation[]>([QUERY_KEYS.conversations]) || [];
   const currentChat = conversations.find((c) => c.id === conversationId);
-  const recipient = currentChat?.type === 'DIRECT' 
-    ? currentChat.members?.find((m) => m.id !== user?.id) 
+  const recipient = currentChat?.type === 'DIRECT'
+    ? currentChat.members?.find((m) => m.id !== user?.id)
     : null;
-  const chatName = currentChat?.type === 'GROUP' 
-    ? currentChat.name 
+  const chatName = currentChat?.type === 'GROUP'
+    ? currentChat.name
     : recipient?.username || 'Chat Room';
-  const chatAvatar = currentChat?.type === 'GROUP' 
-    ? currentChat.avatarUrl 
+  const chatAvatar = currentChat?.type === 'GROUP'
+    ? currentChat.avatarUrl
     : recipient?.avatarUrl;
 
-  const pinnedMessage = messages.find((m) => m.isPinned);
+  const pinnedMessage = safeMessages.find((m) => m.isPinned);
 
   return (
     <div className="flex-1 bg-background flex flex-col h-full overflow-hidden relative">
-      
+
       {/* 1. Header */}
       <div className="h-16 border-b border-border flex items-center justify-between px-6 shrink-0 bg-background/80 backdrop-blur-md z-10">
         <div className="flex items-center gap-3">
@@ -213,8 +227,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
           <div className="flex flex-col text-left">
             <span className="text-sm font-semibold text-foreground">{chatName}</span>
             <span className="text-[10px] text-muted-foreground font-sans">
-              {currentChat?.type === 'GROUP' 
-                ? `${currentChat.members?.length || 0} participants` 
+              {currentChat?.type === 'GROUP'
+                ? `${currentChat.members?.length || 0} participants`
                 : recipient?.status === 'ONLINE' ? 'Online' : 'Offline'}
             </span>
           </div>
@@ -283,14 +297,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
 
       {/* 4. Messages Scroller */}
       <TooltipProvider>
-        <ScrollArea ref={scrollRef} className="flex-1 px-6 py-4">
+        <ScrollArea ref={scrollRef} className="flex-1 min-h-0 px-6 py-4">
           <div className="space-y-4">
             {isLoading ? (
               <div className="text-center py-10 text-xs text-muted-foreground">Loading messages…</div>
-            ) : filteredMessages.length === 0 ? (
+            ) : sortedMessages.length === 0 ? (
               <div className="text-center py-10 text-xs text-muted-foreground">No messages yet</div>
             ) : (
-              filteredMessages.map((msg: IMessage) => {
+              sortedMessages.map((msg: IMessage) => {
                 const isMe = msg.sender.id === user?.id || msg.sender.id === 'me' || msg.sender.id === 'usr-me';
                 const hasLikes = msg.likes && msg.likes.length > 0;
                 const isLikedByMe = msg.likes?.includes(user?.id || 'usr-me');
@@ -313,12 +327,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
                       )}
 
                       {/* Content block */}
-                      <div className={`p-3 rounded-2xl relative shadow-md ${
-                        isMe 
-                          ? 'bg-violet-600 text-white rounded-tr-none' 
-                          : 'bg-neutral-800/80 text-neutral-200 rounded-tl-none border border-neutral-800'
-                      }`}>
-                        
+                      <div className={`p-3 rounded-2xl relative shadow-md ${isMe
+                        ? 'bg-primary text-primary-foreground rounded-tr-none'
+                        : 'bg-neutral-800/80 text-neutral-200 rounded-tl-none border border-neutral-800'
+                        }`}>
+
                         {/* File/Image renders */}
                         {msg.type === 'IMAGE' && msg.content.startsWith('Uploaded an image:') ? (
                           <div className="space-y-2">
@@ -328,7 +341,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
                         ) : msg.type === 'FILE' && msg.content.startsWith('Attachment:') ? (
                           <div className="flex items-center gap-3 bg-neutral-900/60 p-2 rounded-xl border border-neutral-800 text-xs">
                             <div className="w-8 h-8 rounded-lg bg-neutral-800 flex items-center justify-center shrink-0">
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-violet-400">
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-primary">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
                               </svg>
                             </div>
@@ -343,7 +356,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
 
                         {/* Pinned label */}
                         {msg.isPinned && (
-                          <div className={`flex items-center gap-1 mt-1 text-[9px] ${isMe ? 'text-violet-200' : 'text-neutral-500'}`}>
+                          <div className={`flex items-center gap-1 mt-1 text-[9px] ${isMe ? 'text-primary-foreground/80' : 'text-neutral-500'}`}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-2.5 h-2.5">
                               <path strokeLinecap="round" strokeLinejoin="round" d="m15 15-6 6m0 0-6-6m6 6V9a6 6 0 0 1 12 0v3" />
                             </svg>
@@ -376,9 +389,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
                           <Button
                             variant="ghost"
                             onClick={() => handleToggleReaction(msg.id, !!isLikedByMe)}
-                            className="w-7 h-7 p-0 text-neutral-500 hover:text-red-400 hover:bg-neutral-800/40 rounded-lg"
+                            className="w-7 h-7 p-0 text-neutral-500 hover:text-primary hover:bg-muted rounded-lg"
                           >
-                            ❤️
+                            <Heart />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent className="bg-neutral-900 border-neutral-800 text-[10px] py-1 text-white">Like Message</TooltipContent>
@@ -390,7 +403,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
                           <Button
                             variant="ghost"
                             onClick={() => handleTogglePin(msg.id, !!msg.isPinned)}
-                            className="w-7 h-7 p-0 text-neutral-500 hover:text-violet-400 hover:bg-neutral-800/40 rounded-lg"
+                            className="w-7 h-7 p-0 text-neutral-500 hover:text-primary hover:bg-muted rounded-lg"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
                               <path strokeLinecap="round" strokeLinejoin="round" d="m15 15-6 6m0 0-6-6m6 6V9a6 6 0 0 1 12 0v3" />
@@ -409,7 +422,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
                             <Button
                               variant="ghost"
                               onClick={() => handleRetract(msg.id)}
-                              className="w-7 h-7 p-0 text-neutral-500 hover:text-red-500 hover:bg-neutral-800/40 rounded-lg"
+                              className="w-7 h-7 p-0 text-neutral-500 hover:text-primary hover:bg-muted rounded-lg"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
@@ -449,7 +462,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onToggle
 
       {/* 5. Input Bar */}
       <div className="p-4 border-t border-border flex items-center gap-2 bg-background shrink-0">
-        
+
         {/* Attachment menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

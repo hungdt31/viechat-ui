@@ -66,8 +66,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await APIManager.post<any>('/auth/login', credentials);
       if (res.success && res.data) {
-        // Resolve token from access_token (live) or token (mock)
-        const token = res.data.access_token || res.data.token;
+        // Resolve token from accessToken (live) or token (mock)
+        const token = res.data.accessToken || res.data.token;
         if (!token) {
           return false;
         }

@@ -30,7 +30,6 @@ type RegisterFormInputs = yup.InferType<typeof registerSchema>;
 export const Register: React.FC = () => {
   const { register: authRegister } = useAuth();
   const navigate = useNavigate();
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm<RegisterFormInputs>({
@@ -39,7 +38,6 @@ export const Register: React.FC = () => {
 
   const onSubmit = async (data: RegisterFormInputs) => {
     setLoading(true);
-    setErrorMsg(null);
     try {
       const success = await authRegister({
         username: data.username,
@@ -50,11 +48,9 @@ export const Register: React.FC = () => {
         toast.success('Account created successfully!');
         navigate('/');
       } else {
-        setErrorMsg('Registration failed. Username or email might be taken.');
         toast.error('Registration failed. Username or email might be taken.');
       }
     } catch (err) {
-      setErrorMsg('An unexpected error occurred. Please try again.');
       toast.error('An unexpected error occurred.');
     } finally {
       setLoading(false);
@@ -69,12 +65,6 @@ export const Register: React.FC = () => {
           Enter your details to get started with VieChat
         </p>
       </div>
-
-      {errorMsg ? (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center font-medium">
-          {errorMsg}
-        </div>
-      ) : null}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         {/* Username */}

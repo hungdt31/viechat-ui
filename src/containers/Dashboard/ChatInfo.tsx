@@ -1,12 +1,12 @@
 import React from 'react';
 import type { IConversation, IUser } from '@dto';
-import { useFetchMessages } from '../../hooks/chat/queries';
+import { useFetchMessages } from '@/hooks/chat/queries';
 
 // Shadcn UI Imports
-import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
-import { ScrollArea } from '../../components/ui/scroll-area';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface ChatInfoProps {
   conversation: IConversation | null;
@@ -33,19 +33,19 @@ export const ChatInfo: React.FC<ChatInfoProps> = ({ conversation, onClose }) => 
     }
   };
 
-  const recipient = conversation.type === 'DIRECT' 
-    ? conversation.members?.find((m) => m.id !== 'usr-me') 
+  const recipient = conversation.type === 'DIRECT'
+    ? conversation.members?.find((m) => m.id !== 'usr-me')
     : null;
-  const chatName = conversation.type === 'GROUP' 
-    ? conversation.name 
+  const chatName = conversation.type === 'GROUP'
+    ? conversation.name
     : recipient?.username || 'Direct Message';
-  const chatAvatar = conversation.type === 'GROUP' 
-    ? conversation.avatarUrl 
+  const chatAvatar = conversation.type === 'GROUP'
+    ? conversation.avatarUrl
     : recipient?.avatarUrl;
 
   return (
     <div className="w-[300px] border-l border-border bg-card flex flex-col h-full shrink-0 relative animate-in slide-in-from-right duration-200">
-      
+
       {/* 1. Header */}
       <div className="h-16 border-b border-border flex items-center justify-between px-4 shrink-0">
         <span className="text-sm font-semibold text-foreground">Details</span>
@@ -63,7 +63,7 @@ export const ChatInfo: React.FC<ChatInfoProps> = ({ conversation, onClose }) => 
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-6">
-          
+
           {/* 2. Brand Card */}
           <div className="flex flex-col items-center text-center p-4 bg-muted/40 border border-border/60 rounded-2xl">
             <Avatar className="w-16 h-16 border border-border mb-3">
@@ -141,10 +141,10 @@ export const ChatInfo: React.FC<ChatInfoProps> = ({ conversation, onClose }) => 
               <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                 {sharedMedia.map((m) => {
                   const isImage = m.type === 'IMAGE';
-                  const title = isImage 
-                    ? 'Shared Photo' 
+                  const title = isImage
+                    ? 'Shared Photo'
                     : m.content.split(': ')[1]?.split(' (')[0] || 'Document';
-                  
+
                   return (
                     <div key={m.id} className="flex items-center gap-3 p-2 bg-muted/30 hover:bg-muted/60 border border-border/60 rounded-xl cursor-pointer transition">
                       <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">

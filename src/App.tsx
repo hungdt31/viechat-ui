@@ -26,7 +26,7 @@ function App() {
             <SocketProvider>
               <TooltipProvider>
                 <AppRoutes />
-                <Toaster />
+                <Toaster richColors />
               </TooltipProvider>
             </SocketProvider>
           </AuthProvider>

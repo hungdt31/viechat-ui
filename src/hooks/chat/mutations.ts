@@ -9,7 +9,10 @@ export const useSendMessageMutation = (conversationId: string) => {
   
   return useMutation<IMessage, Error, { content: string; type?: 'TEXT' | 'IMAGE' | 'FILE' }>({
     mutationFn: async ({ content, type = 'TEXT' }) => {
-      const res = await APIManager.post<IMessage>(`/conversations/${conversationId}/messages`, { content, type });
+      const res = await APIManager.post<IMessage>(`/conversations/${conversationId}/messages`, { 
+        message_content: content, 
+        message_type: type 
+      });
       if (res.success && res.data) {
         return res.data;
       }
@@ -33,12 +36,31 @@ export const useCreateConversationMutation = () => {
   const queryClient = useQueryClient();
   
   return useMutation<IConversation, Error, { type: 'DIRECT' | 'GROUP'; name?: string; memberIds: string[] }>({
-    mutationFn: async (params) => {
-      const res = await APIManager.post<IConversation>('/conversations', params);
-      if (res.success && res.data) {
+    mutationFn: async (data: { type: 'DIRECT' | 'GROUP'; name?: string; memberIds: string[] }) => {
+      if (data.type === 'DIRECT') {
+        const res = await APIManager.post<IConversation>('/conversations', {
+          targetUserId: data.memberIds[0]
+        });
+        if (!res.success) {
+          throw new Error(res.message || 'Failed to create direct conversation');
+        }
+        return res.data;
+      } else {
+        const res = await APIManager.post<any>('/groups', {
+          name: data.name,
+          member_ids: data.memberIds,
+          isPro: false
+        });
+        if (!res.success) {
+          throw new Error(res.message || 'Failed to create group');
+        }
+        // Group creation automatically creates a General channel. Fetch it so we can set it as active.
+        const channelsRes = await APIManager.get<IConversation[]>(`/groups/${res.data.id}/channels`);
+        if (channelsRes.success && channelsRes.data && channelsRes.data.length > 0) {
+          return channelsRes.data[0];
+        }
         return res.data;
       }
-      throw new Error(res.message || 'Failed to create conversation');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.conversations] });
@@ -83,7 +105,7 @@ export const useTogglePinMutation = (conversationId: string) => {
         res = await APIManager.delete<IMessage>(`/messages/${messageId}/pin`);
       } else {
         // Pin
-        res = await APIManager.put<IMessage>(`/messages/${messageId}/pin`);
+        res = await APIManager.patch<IMessage>(`/messages/${messageId}/pin`);
       }
       if (res.success && res.data) {
         return res.data;

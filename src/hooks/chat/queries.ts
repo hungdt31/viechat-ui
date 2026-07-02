@@ -28,9 +28,13 @@ export const useFetchMessages = (conversationId: string) => {
   return useQuery<IMessage[]>({
     queryKey: QUERY_KEYS.messages(conversationId),
     queryFn: async () => {
-      const res = await APIManager.get<IMessage[]>(`/conversations/${conversationId}/messages`);
+      const res = await APIManager.get<any>(`/conversations/${conversationId}/messages`);
       if (res.success && res.data) {
-        return res.data;
+        if (Array.isArray(res.data)) {
+          return res.data;
+        } else if (res.data.messages && Array.isArray(res.data.messages)) {
+          return res.data.messages;
+        }
       }
       return [];
     },
@@ -44,12 +48,16 @@ export const useSearchUsers = (keyword: string) => {
   return useQuery<IUser[]>({
     queryKey: QUERY_KEYS.userSearch(keyword),
     queryFn: async () => {
-      const res = await APIManager.get<IUser[]>(`/users/search?keyword=${encodeURIComponent(keyword)}`);
+      const res = await APIManager.get<any>(`/users/search?q=${encodeURIComponent(keyword)}`);
       if (res.success && res.data) {
-        return res.data;
+        // Handle both paginated response (real API) and array response (mock)
+        if (Array.isArray(res.data)) {
+          return res.data;
+        } else if (res.data.content && Array.isArray(res.data.content)) {
+          return res.data.content;
+        }
       }
       return [];
     },
-    enabled: keyword.trim().length > 0,
   });
 };

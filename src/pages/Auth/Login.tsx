@@ -23,7 +23,6 @@ type LoginFormInputs = yup.InferType<typeof loginSchema>;
 export const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormInputs>({
@@ -32,7 +31,6 @@ export const Login: React.FC = () => {
 
   const onSubmit = async (data: LoginFormInputs) => {
     setLoading(true);
-    setErrorMsg(null);
     try {
       const success = await login({
         username: data.username!,
@@ -42,11 +40,9 @@ export const Login: React.FC = () => {
         toast.success('Signed in successfully!');
         navigate('/');
       } else {
-        setErrorMsg('Invalid username or password. Please try again.');
         toast.error('Invalid username or password.');
       }
     } catch (err) {
-      setErrorMsg('An unexpected error occurred. Please try again.');
       toast.error('An unexpected error occurred.');
     } finally {
       setLoading(false);
@@ -56,12 +52,6 @@ export const Login: React.FC = () => {
   return (
     <>
       <h2 className="text-xl font-semibold mb-6 text-center">Sign In</h2>
-
-      {errorMsg ? (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs text-center">
-          {errorMsg}
-        </div>
-      ) : null}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-5">
         {/* Username */}

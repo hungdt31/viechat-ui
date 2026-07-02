@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { useFetchConversations } from '../../hooks/chat/queries';
-import { useCreateConversationMutation } from '../../hooks/chat/mutations';
-import { useSearchUsers } from '../../hooks/chat/queries';
+import { useAuth } from '@/context/AuthContext';
+import { useSocket } from '@/context/SocketContext';
+import { useFetchConversations } from '@/hooks/chat/queries';
+import { useCreateConversationMutation } from '@/hooks/chat/mutations';
+import { useSearchUsers } from '@/hooks/chat/queries';
 import type { IConversation, IUser } from '@dto';
-import { APIManager, MOCK_USERS } from '../../services/APIManager';
+import { APIManager } from '@/services/APIManager';
 import { toast } from 'sonner';
 import { useTheme } from '@/context/ThemeContext';
 import { Sun, Moon } from 'lucide-react';
 
 // Shadcn UI Imports
-import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
-import { Input } from '../../components/ui/input';
-import { Button } from '../../components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { Badge } from '../../components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,14 +23,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
+} from '@/components/ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '../../components/ui/dialog';
+} from '@/components/ui/dialog';
 
 interface SidebarProps {
   activeConversationId: string | null;
@@ -41,6 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setActiveConversationId,
 }) => {
   const { user, logout, updateProfile, isMockMode } = useAuth();
+  const { socket } = useSocket();
   const { theme, toggleTheme } = useTheme();
   const { data: conversations = [], refetch } = useFetchConversations();
   const createConversationMutation = useCreateConversationMutation();
@@ -64,6 +66,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     window.addEventListener('mock_message_received', handleMockMsg);
     return () => window.removeEventListener('mock_message_received', handleMockMsg);
   }, [refetch]);
+
+  // Join socket rooms for all conversations so we receive global messages/notifications
+  useEffect(() => {
+    if (!socket || !conversations || conversations.length === 0) return;
+
+    conversations.forEach((conv: IConversation) => {
+      socket.emit('join_conversation', conv.id);
+    });
+  }, [conversations, socket]);
 
   // Handle Profile Status Change
   const handleStatusChange = async (status: 'ONLINE' | 'AWAY' | 'BUSY' | 'OFFLINE') => {
@@ -151,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="relative">
                 <Avatar className="w-10 h-10 border border-border">
                   <AvatarImage src={user?.avatarUrl} />
-                  <AvatarFallback className="bg-violet-950 text-violet-200">
+                  <AvatarFallback className="bg-primary text-primary-foreground">
                     {user?.username.substring(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
@@ -384,20 +395,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Users List */}
           <div className="max-h-48 overflow-y-auto space-y-1 mb-6 border border-border rounded-2xl p-2 bg-muted/20">
-            {searchResults.length === 0 && userSearchQuery.trim().length > 0 ? (
-              <div className="text-center py-4 text-xs text-muted-foreground">
-                No users found
-              </div>
-            ) : (
-              // If no search input, show standard demo users
-              (userSearchQuery.trim().length === 0 ? MOCK_USERS : searchResults).map((u: IUser) => {
-                if (u.id === user?.id) return null;
+            {(() => {
+              const displayUsers = searchResults.filter((u: IUser) => u.id !== user?.id);
+
+              if (displayUsers.length === 0) {
+                return (
+                  <div className="text-center py-4 text-xs text-muted-foreground">
+                    {userSearchQuery.trim().length > 0 ? "No users found" : "No other users available"}
+                  </div>
+                );
+              }
+
+              return displayUsers.map((u: IUser) => {
                 const isSelected = selectedUserIds.includes(u.id);
                 return (
                   <div
                     key={u.id}
                     onClick={() => toggleSelectUser(u.id)}
-                    className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${isSelected ? 'border-2 border-primary' : 'hover:bg-primary/20'
+                    className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${isSelected ? 'bg-secondary' : 'hover:bg-muted'
                       }`}
                   >
                     <Avatar className="w-8 h-8">
@@ -417,8 +432,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
 
           <DialogFooter>
